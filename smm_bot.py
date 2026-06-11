@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, session, jsonify
+from flask import Flask, render_template, request, redirect, session, jsonify, url_for
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import json
@@ -8,7 +8,7 @@ import re
 import qrcode
 from io import BytesIO
 import base64
-from flask_dance.contrib.google import make_google_blueprint, google
+import hashlib
 
 app = Flask(__name__)
 app.secret_key = "venomx_secret_key_2024"
@@ -17,13 +17,6 @@ app.secret_key = "venomx_secret_key_2024"
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///smm_panel.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
-
-# Google OAuth (Optional - Google Client ID/Secret dena padega)
-# Agar nahi hai toh Google login hatane ke liye comment kar dena
-# app.config['GOOGLE_OAUTH_CLIENT_ID'] = 'YOUR_GOOGLE_CLIENT_ID'
-# app.config['GOOGLE_OAUTH_CLIENT_SECRET'] = 'YOUR_GOOGLE_CLIENT_SECRET'
-# google_bp = make_google_blueprint(client_id=app.config['GOOGLE_OAUTH_CLIENT_ID'], client_secret=app.config['GOOGLE_OAUTH_CLIENT_SECRET'], scope=['profile', 'email'])
-# app.register_blueprint(google_bp, url_prefix='/login')
 
 # Owner credentials
 OWNER_USERNAME = "VENOMXSMMPY"
@@ -104,7 +97,7 @@ def generate_transaction_id():
 def generate_random_paise():
     return random.randint(1, 99)
 
-# ============ HTML TEMPLATES ============
+# ============ COMPLETE LOGIN PAGE HTML ============
 LOGIN_HTML = """
 <!DOCTYPE html>
 <html lang="en">
@@ -116,363 +109,120 @@ LOGIN_HTML = """
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700&display=swap');
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Orbitron', monospace; }
         body { min-height: 100vh; background: linear-gradient(135deg, #0a0a2a, #0f0f3a, #1a1a4a); display: flex; justify-content: center; align-items: center; position: relative; overflow: hidden; }
-        body::before { content: ''; position: absolute; width: 200%; height: 200%; background: radial-gradient(circle, rgba(0,255,255,0.1) 0%, transparent 50%); animation: rotate 20s linear infinite; z-index: 0; }
+        
+        /* Animated Background Particles */
+        .particle { position: absolute; width: 3px; height: 3px; background: #00ffcc; border-radius: 50%; animation: float 10s infinite; z-index: 0; }
+        @keyframes float { 0% { transform: translateY(100vh) scale(0); opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { transform: translateY(-20vh) scale(1); opacity: 0; } }
+        
+        /* Rotating Glow */
+        .glow { position: absolute; width: 300px; height: 300px; background: radial-gradient(circle, rgba(0,255,204,0.2) 0%, transparent 70%); border-radius: 50%; animation: rotate 20s linear infinite; z-index: 0; }
         @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        .login-card { position: relative; z-index: 1; background: rgba(10, 10, 42, 0.9); backdrop-filter: blur(12px); border-radius: 24px; padding: 40px 35px; width: 100%; max-width: 450px; border: 1px solid rgba(0, 255, 204, 0.3); box-shadow: 0 0 40px rgba(0, 255, 204, 0.1); }
-        .logo { text-align: center; margin-bottom: 30px; }
-        .logo img { max-width: 220px; }
-        h2 { color: #00ffcc; text-align: center; font-size: 28px; letter-spacing: 4px; margin-bottom: 10px; text-shadow: 0 0 10px #00ffcc; }
-        .sub { color: rgba(255,255,255,0.6); text-align: center; font-size: 13px; margin-bottom: 30px; }
+        
+        .login-card { position: relative; z-index: 1; background: rgba(10, 10, 42, 0.95); backdrop-filter: blur(12px); border-radius: 24px; padding: 40px 35px; width: 100%; max-width: 480px; border: 1px solid rgba(0, 255, 204, 0.3); box-shadow: 0 0 40px rgba(0, 255, 204, 0.1); animation: fadeIn 0.6s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .logo { text-align: center; margin-bottom: 20px; }
+        .logo img { max-width: 200px; }
+        h2 { color: #00ffcc; text-align: center; font-size: 28px; letter-spacing: 4px; text-shadow: 0 0 10px #00ffcc; }
+        .sub { color: rgba(255,255,255,0.6); text-align: center; font-size: 12px; margin-bottom: 25px; letter-spacing: 2px; }
+        
+        .tab { display: flex; margin-bottom: 25px; border-bottom: 1px solid rgba(0,255,204,0.3); }
+        .tab-btn { flex: 1; background: none; border: none; padding: 12px; color: rgba(255,255,255,0.6); font-size: 16px; cursor: pointer; transition: 0.3s; }
+        .tab-btn.active { color: #00ffcc; border-bottom: 2px solid #00ffcc; }
+        
+        .form-container { display: none; }
+        .form-container.active { display: block; animation: fadeIn 0.4s ease; }
+        
         .input-group { margin-bottom: 20px; }
-        .input-group input { width: 100%; padding: 14px 18px; background: rgba(255,255,255,0.05); border: 1px solid rgba(0, 255, 204, 0.3); border-radius: 12px; color: white; font-size: 14px; }
+        .input-group input { width: 100%; padding: 14px 18px; background: rgba(255,255,255,0.05); border: 1px solid rgba(0, 255, 204, 0.3); border-radius: 12px; color: white; font-size: 14px; transition: 0.3s; }
         .input-group input:focus { outline: none; border-color: #00ffcc; box-shadow: 0 0 15px rgba(0, 255, 204, 0.3); }
-        .btn { width: 100%; padding: 14px; background: linear-gradient(135deg, #00ffcc, #0099ff); border: none; border-radius: 12px; color: #0a0a2a; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        
+        .btn { width: 100%; padding: 14px; background: linear-gradient(135deg, #00ffcc, #0099ff); border: none; border-radius: 12px; color: #0a0a2a; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 10px; transition: 0.3s; }
         .btn:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(0, 255, 204, 0.4); }
-        .error { background: rgba(255,0,0,0.2); border: 1px solid #ff3366; border-radius: 10px; padding: 10px; margin-bottom: 20px; text-align: center; color: #ff6b6b; font-size: 13px; }
-        .footer { text-align: center; margin-top: 25px; font-size: 11px; color: rgba(255,255,255,0.3); }
+        
+        .google-btn { background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); margin-top: 15px; }
+        .divider { text-align: center; margin: 20px 0; color: rgba(255,255,255,0.4); font-size: 12px; position: relative; }
+        .divider::before, .divider::after { content: ''; position: absolute; top: 50%; width: 40%; height: 1px; background: rgba(255,255,255,0.2); }
+        .divider::before { left: 0; } .divider::after { right: 0; }
+        
+        .error { background: rgba(255,51,102,0.2); border: 1px solid #ff3366; border-radius: 10px; padding: 12px; margin-bottom: 20px; text-align: center; color: #ff6b6b; font-size: 13px; }
+        .success { background: rgba(0,255,204,0.2); border: 1px solid #00ffcc; border-radius: 10px; padding: 12px; margin-bottom: 20px; text-align: center; color: #00ffcc; font-size: 13px; }
+        
+        .footer { text-align: center; margin-top: 25px; font-size: 10px; color: rgba(255,255,255,0.3); }
+        a { color: #00ffcc; text-decoration: none; }
     </style>
 </head>
 <body>
+    <div id="particles"></div>
+    <div class="glow" style="top: -150px; right: -150px;"></div>
+    <div class="glow" style="bottom: -150px; left: -150px; animation-direction: reverse;"></div>
+    
     <div class="login-card">
         <div class="logo"><img src="https://i.ibb.co/VYf9Qq2p/file-97.jpg" alt="VENOM X PANNEL"></div>
         <h2>VENOM X</h2><p class="sub">SMM PANEL</p>
-        {% if error %}<div class="error">{{ error }}</div>{% endif %}
-        <form method="POST" action="/login">
-            <div class="input-group"><input type="text" name="username" placeholder="USERNAME" required></div>
-            <div class="input-group"><input type="password" name="password" placeholder="PASSWORD" required></div>
-            <button type="submit" class="btn">LOGIN</button>
-        </form>
+        
+        <div class="tab">
+            <button class="tab-btn active" onclick="switchTab('login')">LOGIN</button>
+            <button class="tab-btn" onclick="switchTab('register')">REGISTER</button>
+        </div>
+        
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+        {% if success %}
+        <div class="success">{{ success }}</div>
+        {% endif %}
+        
+        <!-- Login Form -->
+        <div id="loginForm" class="form-container active">
+            <form method="POST" action="/login">
+                <div class="input-group"><input type="text" name="username" placeholder="USERNAME" required></div>
+                <div class="input-group"><input type="password" name="password" placeholder="PASSWORD" required></div>
+                <button type="submit" class="btn">LOGIN</button>
+            </form>
+        </div>
+        
+        <!-- Register Form -->
+        <div id="registerForm" class="form-container">
+            <form method="POST" action="/register">
+                <div class="input-group"><input type="text" name="username" placeholder="USERNAME" required></div>
+                <div class="input-group"><input type="email" name="email" placeholder="EMAIL" required></div>
+                <div class="input-group"><input type="password" name="password" placeholder="PASSWORD" required></div>
+                <div class="input-group"><input type="password" name="confirm_password" placeholder="CONFIRM PASSWORD" required></div>
+                <button type="submit" class="btn">REGISTER</button>
+            </form>
+        </div>
+        
+        <div class="divider">OR</div>
+        <a href="/google-login" style="text-decoration: none;"><button class="btn google-btn">🔐 SIGN IN WITH GOOGLE</button></a>
+        
         <div class="footer">© 2025 VENOM X SMM PANEL | OWNER: VENOMXSMMPY</div>
     </div>
-</body>
-</html>
-"""
-
-DASHBOARD_HTML = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VENOM X - Dashboard</title>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700&display=swap');
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Orbitron', monospace; }
-        body { background: linear-gradient(135deg, #0a0a2a, #0f0f3a, #1a1a4a); min-height: 100vh; }
-        .navbar { background: rgba(10, 10, 42, 0.9); backdrop-filter: blur(10px); padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(0, 255, 204, 0.3); }
-        .logo img { height: 45px; }
-        .nav-links a { color: #00ffcc; text-decoration: none; margin-left: 25px; font-size: 13px; }
-        .balance { background: linear-gradient(135deg, #00ffcc, #0099ff); padding: 8px 18px; border-radius: 30px; color: #0a0a2a; font-weight: bold; margin-left: 25px; }
-        .container { padding: 30px; max-width: 1400px; margin: 0 auto; }
-        .welcome { color: #00ffcc; margin-bottom: 30px; font-size: 24px; }
-        .welcome span { color: white; }
-        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 40px; }
-        .stat-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(0, 255, 204, 0.3); border-radius: 16px; padding: 20px; text-align: center; }
-        .stat-card h3 { color: rgba(255,255,255,0.6); font-size: 12px; }
-        .stat-card .value { color: #00ffcc; font-size: 28px; font-weight: bold; }
-        .section-title { color: #00ffcc; margin: 30px 0 20px; font-size: 18px; }
-        .table-container { background: rgba(255,255,255,0.05); border-radius: 16px; overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 12px 15px; text-align: left; color: white; border-bottom: 1px solid rgba(255,255,255,0.1); font-size: 12px; }
-        th { color: #00ffcc; background: rgba(0,0,0,0.3); }
-        .btn-service { background: linear-gradient(135deg, #00ffcc, #0099ff); padding: 10px 20px; border: none; border-radius: 8px; color: #0a0a2a; font-weight: bold; cursor: pointer; text-decoration: none; display: inline-block; margin-right: 10px; }
-        .platforms { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 30px; }
-        .platform-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(0, 255, 204, 0.3); border-radius: 16px; padding: 20px; text-align: center; width: 180px; cursor: pointer; transition: 0.3s; }
-        .platform-card:hover { transform: translateY(-3px); box-shadow: 0 5px 20px rgba(0,255,204,0.2); }
-        .platform-card img { width: 60px; height: 60px; object-fit: contain; margin-bottom: 10px; }
-        .platform-card h3 { color: #00ffcc; font-size: 16px; }
-        .service-form { display: none; background: rgba(255,255,255,0.05); border-radius: 16px; padding: 20px; margin-top: 20px; }
-        .service-form input, .service-form select { width: 100%; padding: 12px; margin: 10px 0; background: rgba(255,255,255,0.1); border: 1px solid #00ffcc; border-radius: 8px; color: white; }
-        .service-form button { background: linear-gradient(135deg, #00ffcc, #0099ff); padding: 12px; border: none; border-radius: 8px; color: #0a0a2a; font-weight: bold; cursor: pointer; width: 100%; }
-        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); justify-content: center; align-items: center; z-index: 300; }
-        .modal-content { background: #0a0a2a; padding: 30px; border-radius: 20px; max-width: 400px; width: 90%; border: 1px solid #00ffcc; text-align: center; }
-        .modal-content input { width: 100%; padding: 12px; margin: 10px 0; background: rgba(255,255,255,0.1); border: 1px solid #00ffcc; border-radius: 8px; color: white; }
-        @media (max-width: 768px) { .nav-links a { display: none; } .container { padding: 20px; } }
-    </style>
-</head>
-<body>
-    <div class="navbar">
-        <div class="logo"><img src="https://i.ibb.co/VYf9Qq2p/file-97.jpg" alt="VENOM X"></div>
-        <div class="nav-links">
-            <a href="/dashboard">DASHBOARD</a>
-            <a href="#" onclick="showServices()">SERVICES</a>
-            <a href="#" onclick="openAddCash()">ADD CASH</a>
-            <a href="/logout" class="balance">LOGOUT</a>
-        </div>
-    </div>
-    <div class="container">
-        <div class="welcome">WELCOME, <span>{{ user.username.upper() }}</span></div>
-        <div class="stats">
-            <div class="stat-card"><h3>WALLET BALANCE</h3><div class="value">₹{{ "%.2f"|format(user.balance) }}</div></div>
-            <div class="stat-card"><h3>TOTAL ORDERS</h3><div class="value">{{ orders|length }}</div></div>
-        </div>
-        
-        <div class="platforms">
-            <div class="platform-card" onclick="showPlatform('instagram')"><img src="https://i.ibb.co/SXBKM3cS/file-100.jpg"><h3>INSTAGRAM</h3></div>
-            <div class="platform-card" onclick="showPlatform('youtube')"><img src="https://i.ibb.co/6jQK0fK/file-99.jpg"><h3>YOUTUBE</h3></div>
-        </div>
-        
-        <div id="serviceForm" class="service-form">
-            <h3 style="color:#00ffcc" id="serviceTitle">Select Service</h3>
-            <select id="serviceSelect"></select>
-            <input type="text" id="serviceLink" placeholder="Instagram/YouTube Link" required>
-            <input type="number" id="serviceQuantity" placeholder="Quantity" required>
-            <p id="servicePrice" style="color:#00ffcc; margin:10px 0;"></p>
-            <button onclick="placeOrder()">PLACE ORDER</button>
-        </div>
-        
-        <div id="orderResult" style="margin-top:20px; text-align:center; color:#00ffcc;"></div>
-        
-        <h3 class="section-title">RECENT ORDERS</h3>
-        <div class="table-container">
-            <table>
-                <thead><tr><th>ORDER ID</th><th>SERVICE</th><th>QUANTITY</th><th>AMOUNT</th><th>STATUS</th><th>DATE</th></tr></thead>
-                <tbody>
-                    {% for order in orders %}
-                    <tr><td>{{ order.order_id }}</td><td>{{ order.service_name[:25] }}</td><td>{{ order.quantity }}</td><td>₹{{ order.total_amount }}</td><td>{{ order.status }}</td><td>{{ order.created_at.strftime('%Y-%m-%d') }}</td></tr>
-                    {% else %}
-                    <tr><td colspan="6" style="text-align:center;">No orders yet</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-    
-    <div id="addCashModal" class="modal">
-        <div class="modal-content">
-            <h2 style="color:#00ffcc">ADD CASH</h2>
-            <input type="number" id="cashAmount" placeholder="Amount (₹10-500)" min="10" max="500">
-            <button onclick="generateQR()" style="background:#00ffcc; color:#0a0a2a; padding:12px; border:none; border-radius:8px; font-weight:bold;">GENERATE QR</button>
-            <button onclick="closeAddCash()" style="margin-top:10px; background:rgba(255,255,255,0.1); color:white; padding:12px; border:none; border-radius:8px;">CANCEL</button>
-            <div id="qrResult" style="margin-top:20px;"></div>
-        </div>
-    </div>
     
     <script>
-        let services = {{ services|tojson }};
-        let currentPlatform = null;
+        function switchTab(tab) {
+            document.getElementById('loginForm').classList.remove('active');
+            document.getElementById('registerForm').classList.remove('active');
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            if(tab === 'login') {
+                document.getElementById('loginForm').classList.add('active');
+                document.querySelector('.tab-btn:first-child').classList.add('active');
+            } else {
+                document.getElementById('registerForm').classList.add('active');
+                document.querySelector('.tab-btn:last-child').classList.add('active');
+            }
+        }
         
-        function showServices() { document.getElementById('serviceForm').style.display = 'block'; }
-        function showPlatform(platform) {
-            currentPlatform = platform;
-            let serviceSelect = document.getElementById('serviceSelect');
-            serviceSelect.innerHTML = '';
-            services[platform].services.forEach(s => {
-                let option = document.createElement('option');
-                option.value = s.id;
-                option.text = `${s.name} - ₹${s.price}/1K (Min:${s.min} Max:${s.max})`;
-                serviceSelect.appendChild(option);
-            });
-            document.getElementById('serviceTitle').innerHTML = `${services[platform].name} SERVICES`;
-            document.getElementById('serviceForm').style.display = 'block';
-            updatePrice();
-            serviceSelect.onchange = updatePrice;
-        }
-        function updatePrice() {
-            let select = document.getElementById('serviceSelect');
-            let selectedId = parseInt(select.value);
-            let service = null;
-            for(let s of services[currentPlatform].services) { if(s.id === selectedId) { service = s; break; } }
-            if(service) { document.getElementById('servicePrice').innerHTML = `Price: ₹${service.price}/1000 | Min:${service.min} Max:${service.max}`; }
-        }
-        function placeOrder() {
-            let serviceId = document.getElementById('serviceSelect').value;
-            let link = document.getElementById('serviceLink').value;
-            let quantity = document.getElementById('serviceQuantity').value;
-            if(!link || !quantity) { alert('Fill all fields'); return; }
-            fetch('/place-order', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: `service_type=${currentPlatform}&service_id=${serviceId}&link=${link}&quantity=${quantity}`
-            }).then(res => res.json()).then(data => {
-                if(data.success) { document.getElementById('orderResult').innerHTML = `<span style="color:#00ff00;">✅ Order Placed! ID: ${data.order_id} | New Balance: ₹${data.balance}</span>`; setTimeout(() => location.reload(), 2000); }
-                else { document.getElementById('orderResult').innerHTML = `<span style="color:#ff3366;">❌ ${data.error}</span>`; }
-            });
-        }
-        function openAddCash() { document.getElementById('addCashModal').style.display = 'flex'; }
-        function closeAddCash() { document.getElementById('addCashModal').style.display = 'none'; document.getElementById('qrResult').innerHTML = ''; document.getElementById('cashAmount').value = ''; }
-        function generateQR() {
-            let amount = document.getElementById('cashAmount').value;
-            if(amount < 10 || amount > 500) { alert('Amount must be between ₹10 and ₹500'); return; }
-            fetch('/add-cash', { method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'amount=' + amount })
-            .then(res => res.json()).then(data => {
-                if(data.success) { document.getElementById('qrResult').innerHTML = `<p style="color:#00ffcc;">Pay: ₹${data.qr_amount}</p><img src="data:image/png;base64,${data.qr_code}" style="width:180px;"><p style="color:#ffaa00;">Txn ID: ${data.transaction_id}</p><p style="color:#aaa;">Send screenshot to bot for verification</p>`; }
-                else { alert('Error: ' + data.error); }
-            });
+        // Create particles
+        for(let i = 0; i < 60; i++) {
+            let particle = document.createElement('div');
+            particle.className = 'particle';
+            particle.style.left = Math.random() * 100 + '%';
+            particle.style.animationDuration = (Math.random() * 10 + 5) + 's';
+            particle.style.animationDelay = Math.random() * 5 + 's';
+            document.body.appendChild(particle);
         }
     </script>
-</body>
-</html>
-"""
-
-ADMIN_HTML = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VENOM X - Admin Panel</title>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700&display=swap');
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Orbitron', monospace; }
-        body { background: linear-gradient(135deg, #0a0a2a, #0f0f3a, #1a1a4a); min-height: 100vh; }
-        .navbar { background: rgba(10, 10, 42, 0.9); padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #00ffcc; }
-        .logo img { height: 45px; }
-        .container { padding: 30px; max-width: 1400px; margin: 0 auto; }
-        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
-        .stat-card { background: rgba(255,255,255,0.05); border: 1px solid #00ffcc; border-radius: 16px; padding: 20px; text-align: center; }
-        .stat-card h3 { color: rgba(255,255,255,0.6); font-size: 12px; }
-        .stat-card .value { color: #00ffcc; font-size: 28px; font-weight: bold; }
-        h3 { color: #00ffcc; margin: 20px 0; }
-        .table-container { background: rgba(255,255,255,0.05); border-radius: 16px; overflow-x: auto; margin-bottom: 20px; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 10px; text-align: left; color: white; border-bottom: 1px solid rgba(255,255,255,0.1); font-size: 12px; }
-        th { color: #00ffcc; }
-        .btn-ban { background: #ff3366; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; }
-        .btn-unban { background: #00ffcc; color: #0a0a2a; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; }
-        .btn-add { background: #0099ff; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; }
-        .logout { color: #00ffcc; text-decoration: none; }
-    </style>
-</head>
-<body>
-    <div class="navbar">
-        <div class="logo"><img src="https://i.ibb.co/VYf9Qq2p/file-97.jpg" alt="VENOM X"></div>
-        <a href="/logout" class="logout">LOGOUT</a>
-    </div>
-    <div class="container">
-        <h2 style="color:#00ffcc; margin-bottom:20px;">👑 ADMIN PANEL</h2>
-        <div class="stats">
-            <div class="stat-card"><h3>TOTAL USERS</h3><div class="value">{{ total_users }}</div></div>
-            <div class="stat-card"><h3>TOTAL ORDERS</h3><div class="value">{{ total_orders }}</div></div>
-            <div class="stat-card"><h3>TOTAL VOLUME</h3><div class="value">₹{{ total_volume }}</div></div>
-        </div>
-        
-        <h3>📋 USERS</h3>
-        <div class="table-container">
-            <table>
-                <thead><tr><th>ID</th><th>USERNAME</th><th>BALANCE</th><th>STATUS</th><th>ACTION</th></tr></thead>
-                <tbody>
-                    {% for u in users %}
-                    <tr>
-                        <td>{{ u.id }}</td><td>{{ u.username }}</td><td>₹{{ u.balance }}</td>
-                        <td>{% if u.is_banned %}❌ Banned{% else %}✅ Active{% endif %}</td>
-                        <td>
-                            {% if not u.is_admin %}
-                                {% if u.is_banned %}
-                                <button class="btn-unban" onclick="unbanUser({{ u.id }})">UNBAN</button>
-                                {% else %}
-                                <button class="btn-ban" onclick="banUser({{ u.id }})">BAN</button>
-                                {% endif %}
-                                <input type="number" id="amount_{{ u.id }}" placeholder="Amount" style="width:80px; margin-left:5px;">
-                                <button class="btn-add" onclick="addBalance({{ u.id }})">+ ADD</button>
-                            {% else %}
-                                <span style="color:#00ffcc;">👑 OWNER</span>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        
-        <h3>📦 ORDERS</h3>
-        <div class="table-container">
-            <table><thead><tr><th>ORDER ID</th><th>USER</th><th>SERVICE</th><th>QUANTITY</th><th>AMOUNT</th><th>STATUS</th><th>DATE</th></tr></thead>
-            <tbody>
-                {% for o in orders %}
-                <tr><td>{{ o.order_id }}</td><td>{{ o.user_id }}</td><td>{{ o.service_name[:20] }}</td><td>{{ o.quantity }}</td><td>₹{{ o.total_amount }}</td><td>{{ o.status }}</td><td>{{ o.created_at.strftime('%Y-%m-%d') }}</td></tr>
-                {% endfor %}
-            </tbody>
-            </table>
-        </div>
-    </div>
-    <script>
-        function banUser(id) { fetch('/admin/ban-user', { method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'user_id='+id }).then(() => location.reload()); }
-        function unbanUser(id) { fetch('/admin/unban-user', { method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'user_id='+id }).then(() => location.reload()); }
-        function addBalance(id) { let amount = document.getElementById('amount_'+id).value; fetch('/admin/add-balance', { method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'user_id='+id+'&amount='+amount }).then(() => location.reload()); }
-    </script>
-</body>
-</html>
-"""
-
-ORDER_HISTORY_HTML = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VENOM X - Order History</title>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700&display=swap');
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Orbitron', monospace; }
-        body { background: linear-gradient(135deg, #0a0a2a, #0f0f3a, #1a1a4a); min-height: 100vh; }
-        .navbar { background: rgba(10, 10, 42, 0.9); padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #00ffcc; }
-        .logo img { height: 45px; }
-        .container { padding: 30px; max-width: 1200px; margin: 0 auto; }
-        .back { color: #00ffcc; text-decoration: none; display: inline-block; margin-bottom: 20px; }
-        h2 { color: #00ffcc; margin-bottom: 20px; }
-        .table-container { background: rgba(255,255,255,0.05); border-radius: 16px; overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 12px; text-align: left; color: white; border-bottom: 1px solid rgba(255,255,255,0.1); font-size: 12px; }
-        th { color: #00ffcc; }
-    </style>
-</head>
-<body>
-    <div class="navbar"><div class="logo"><img src="https://i.ibb.co/VYf9Qq2p/file-97.jpg" alt="VENOM X"></div><a href="/dashboard" class="back">← BACK</a></div>
-    <div class="container">
-        <h2>📜 ORDER HISTORY</h2>
-        <div class="table-container">
-            <table>
-                <thead><tr><th>ORDER ID</th><th>SERVICE</th><th>LINK</th><th>QUANTITY</th><th>AMOUNT</th><th>STATUS</th><th>DATE</th></tr></thead>
-                <tbody>
-                    {% for o in orders %}
-                    <tr><td>{{ o.order_id }}</td><td>{{ o.service_name }}</td><td><small>{{ o.link[:40] }}</small></td><td>{{ o.quantity }}</td><td>₹{{ o.total_amount }}</td><td>{{ o.status }}</td><td>{{ o.created_at.strftime('%Y-%m-%d %H:%M') }}</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-</body>
-</html>
-"""
-
-TRANSACTION_HISTORY_HTML = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VENOM X - Transaction History</title>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700&display=swap');
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Orbitron', monospace; }
-        body { background: linear-gradient(135deg, #0a0a2a, #0f0f3a, #1a1a4a); min-height: 100vh; }
-        .navbar { background: rgba(10, 10, 42, 0.9); padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #00ffcc; }
-        .logo img { height: 45px; }
-        .container { padding: 30px; max-width: 1200px; margin: 0 auto; }
-        .back { color: #00ffcc; text-decoration: none; display: inline-block; margin-bottom: 20px; }
-        h2 { color: #00ffcc; margin-bottom: 20px; }
-        .table-container { background: rgba(255,255,255,0.05); border-radius: 16px; overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 12px; text-align: left; color: white; border-bottom: 1px solid rgba(255,255,255,0.1); font-size: 12px; }
-        th { color: #00ffcc; }
-    </style>
-</head>
-<body>
-    <div class="navbar"><div class="logo"><img src="https://i.ibb.co/VYf9Qq2p/file-97.jpg" alt="VENOM X"></div><a href="/dashboard" class="back">← BACK</a></div>
-    <div class="container">
-        <h2>💰 TRANSACTION HISTORY</h2>
-        <div class="table-container">
-            <table>
-                <thead><tr><th>TRANSACTION ID</th><th>AMOUNT</th><th>QR AMOUNT</th><th>STATUS</th><th>DATE</th></tr></thead>
-                <tbody>
-                    {% for t in transactions %}
-                    <tr><td>{{ t.transaction_id }}</td><td>₹{{ t.amount }}</td><td>₹{{ t.qr_amount }}</td><td>{{ t.status }}</td><td>{{ t.created_at.strftime('%Y-%m-%d %H:%M') }}</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
 </body>
 </html>
 """
@@ -495,11 +245,35 @@ def login():
         session['user_id'] = user.id
         session['username'] = user.username
         session['is_admin'] = user.is_admin
-        # Save IP
         user.ip_address = request.remote_addr
         db.session.commit()
         return redirect('/admin' if user.is_admin else '/dashboard')
-    return LOGIN_HTML.replace('{% if error %}', f'<div class="error">Invalid credentials!</div>')
+    return LOGIN_HTML.replace('{% if error %}', '<div class="error">Invalid credentials!</div>')
+
+@app.route('/register', methods=['POST'])
+def register():
+    username = request.form.get('username')
+    email = request.form.get('email')
+    password = request.form.get('password')
+    confirm = request.form.get('confirm_password')
+    
+    if password != confirm:
+        return LOGIN_HTML.replace('{% if error %}', '<div class="error">Passwords do not match!</div>')
+    
+    existing = User.query.filter_by(username=username).first()
+    if existing:
+        return LOGIN_HTML.replace('{% if error %}', '<div class="error">Username already exists!</div>')
+    
+    new_user = User(username=username, email=email, password=password, balance=0)
+    db.session.add(new_user)
+    db.session.commit()
+    
+    return LOGIN_HTML.replace('{% if success %}', '<div class="success">Account created! Please login.</div>')
+
+@app.route('/google-login')
+def google_login():
+    # Simple mock Google login - in production, use proper OAuth
+    return redirect('/')
 
 @app.route('/dashboard')
 def dashboard():
@@ -510,7 +284,7 @@ def dashboard():
         session.clear()
         return redirect('/')
     orders = Order.query.filter_by(user_id=user.id).order_by(Order.created_at.desc()).limit(10).all()
-    return DASHBOARD_HTML.replace('{{ user.username }}', user.username).replace('{{ user.balance }}', str(user.balance)).replace('{{ orders|length }}', str(len(orders))) + ''.join([f'<tr><td>{o.order_id}</td><td>{o.service_name[:25]}</td><td>{o.quantity}</td><td>₹{o.total_amount}</td><td>{o.status}</td><td>{o.created_at.strftime("%Y-%m-%d")}</td></tr>' for o in orders]) if orders else '<tr><td colspan="6">No orders yet</td></tr>'
+    return render_template_string(DASHBOARD_HTML, user=user, orders=orders, services=SERVICES)
 
 @app.route('/admin')
 def admin_panel():
@@ -521,38 +295,7 @@ def admin_panel():
     total_orders = len(orders)
     total_users = len(users)
     total_volume = sum([o.total_amount for o in orders])
-    return ADMIN_HTML
-
-@app.route('/admin/ban-user', methods=['POST'])
-def ban_user():
-    if 'user_id' not in session or not session.get('is_admin'):
-        return jsonify({'error': 'Unauthorized'}), 401
-    user = User.query.get(request.form.get('user_id'))
-    if user:
-        user.is_banned = True
-        db.session.commit()
-    return jsonify({'success': True})
-
-@app.route('/admin/unban-user', methods=['POST'])
-def unban_user():
-    if 'user_id' not in session or not session.get('is_admin'):
-        return jsonify({'error': 'Unauthorized'}), 401
-    user = User.query.get(request.form.get('user_id'))
-    if user:
-        user.is_banned = False
-        db.session.commit()
-    return jsonify({'success': True})
-
-@app.route('/admin/add-balance', methods=['POST'])
-def admin_add_balance():
-    if 'user_id' not in session or not session.get('is_admin'):
-        return jsonify({'error': 'Unauthorized'}), 401
-    user = User.query.get(request.form.get('user_id'))
-    amount = float(request.form.get('amount'))
-    if user:
-        user.balance += amount
-        db.session.commit()
-    return jsonify({'success': True})
+    return render_template_string(ADMIN_HTML, users=users, orders=orders, total_orders=total_orders, total_users=total_users, total_volume=total_volume)
 
 @app.route('/place-order', methods=['POST'])
 def place_order():
@@ -620,14 +363,45 @@ def order_history():
     if 'user_id' not in session:
         return redirect('/')
     orders = Order.query.filter_by(user_id=session['user_id']).order_by(Order.created_at.desc()).all()
-    return ORDER_HISTORY_HTML
+    return render_template_string(ORDER_HISTORY_HTML, orders=orders)
 
 @app.route('/transaction-history')
 def transaction_history():
     if 'user_id' not in session:
         return redirect('/')
     transactions = Transaction.query.filter_by(user_id=session['user_id']).order_by(Transaction.created_at.desc()).all()
-    return TRANSACTION_HISTORY_HTML
+    return render_template_string(TRANSACTION_HISTORY_HTML, transactions=transactions)
+
+@app.route('/admin/ban-user', methods=['POST'])
+def ban_user():
+    if 'user_id' not in session or not session.get('is_admin'):
+        return jsonify({'error': 'Unauthorized'}), 401
+    user = User.query.get(request.form.get('user_id'))
+    if user:
+        user.is_banned = True
+        db.session.commit()
+    return jsonify({'success': True})
+
+@app.route('/admin/unban-user', methods=['POST'])
+def unban_user():
+    if 'user_id' not in session or not session.get('is_admin'):
+        return jsonify({'error': 'Unauthorized'}), 401
+    user = User.query.get(request.form.get('user_id'))
+    if user:
+        user.is_banned = False
+        db.session.commit()
+    return jsonify({'success': True})
+
+@app.route('/admin/add-balance', methods=['POST'])
+def admin_add_balance():
+    if 'user_id' not in session or not session.get('is_admin'):
+        return jsonify({'error': 'Unauthorized'}), 401
+    user = User.query.get(request.form.get('user_id'))
+    amount = float(request.form.get('amount'))
+    if user:
+        user.balance += amount
+        db.session.commit()
+    return jsonify({'success': True})
 
 @app.route('/logout')
 def logout():
@@ -650,6 +424,131 @@ def sms_webhook():
             db.session.commit()
             return jsonify({'status': 'success'})
     return jsonify({'status': 'pending'})
+
+# ============ SIMPLE DASHBOARD HTML ============
+DASHBOARD_HTML = """
+<!DOCTYPE html>
+<html>
+<head><title>VENOM X - Dashboard</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:'Orbitron',monospace;}
+body{background:linear-gradient(135deg,#0a0a2a,#0f0f3a,#1a1a4a);min-height:100vh;}
+.navbar{background:rgba(10,10,42,0.9);padding:15px 30px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #00ffcc;}
+.logo img{height:45px;}
+.nav-links a{color:#00ffcc;text-decoration:none;margin-left:25px;}
+.balance{background:linear-gradient(135deg,#00ffcc,#0099ff);padding:8px 18px;border-radius:30px;color:#0a0a2a;font-weight:bold;}
+.container{padding:30px;max-width:1400px;margin:0 auto;}
+.welcome{color:#00ffcc;margin-bottom:30px;font-size:24px;}
+.welcome span{color:white;}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;margin-bottom:40px;}
+.stat-card{background:rgba(255,255,255,0.05);border:1px solid rgba(0,255,204,0.3);border-radius:16px;padding:20px;text-align:center;}
+.stat-card h3{color:rgba(255,255,255,0.6);font-size:12px;}
+.stat-card .value{color:#00ffcc;font-size:28px;font-weight:bold;}
+.platforms{display:flex;gap:20px;flex-wrap:wrap;margin-bottom:30px;}
+.platform-card{background:rgba(255,255,255,0.05);border:1px solid #00ffcc;border-radius:16px;padding:20px;text-align:center;width:180px;cursor:pointer;}
+.platform-card img{width:60px;height:60px;}
+.platform-card h3{color:#00ffcc;}
+.service-form{display:none;background:rgba(255,255,255,0.05);border-radius:16px;padding:20px;margin-top:20px;}
+.service-form input,.service-form select{width:100%;padding:12px;margin:10px 0;background:rgba(255,255,255,0.1);border:1px solid #00ffcc;border-radius:8px;color:white;}
+.service-form button{background:linear-gradient(135deg,#00ffcc,#0099ff);padding:12px;border:none;border-radius:8px;color:#0a0a2a;font-weight:bold;cursor:pointer;}
+.table-container{background:rgba(255,255,255,0.05);border-radius:16px;overflow-x:auto;}
+table{width:100%;border-collapse:collapse;}
+th,td{padding:12px;text-align:left;color:white;border-bottom:1px solid rgba(255,255,255,0.1);}
+th{color:#00ffcc;}
+.modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);justify-content:center;align-items:center;z-index:300;}
+.modal-content{background:#0a0a2a;padding:30px;border-radius:20px;max-width:400px;width:90%;border:1px solid #00ffcc;}
+</style>
+</head>
+<body>
+<div class="navbar"><div class="logo"><img src="https://i.ibb.co/VYf9Qq2p/file-97.jpg"></div><div class="nav-links"><a href="/dashboard">HOME</a><a href="#" onclick="openAddCash()">ADD CASH</a><a href="/order-history">ORDERS</a><a href="/transaction-history">HISTORY</a><a href="/logout" class="balance">LOGOUT</a></div></div>
+<div class="container">
+<div class="welcome">WELCOME, <span>{{ user.username }}</span></div>
+<div class="stats"><div class="stat-card"><h3>BALANCE</h3><div class="value">₹{{ "%.2f"|format(user.balance) }}</div></div><div class="stat-card"><h3>ORDERS</h3><div class="value">{{ orders|length }}</div></div></div>
+<div class="platforms"><div class="platform-card" onclick="showPlatform('instagram')"><img src="https://i.ibb.co/SXBKM3cS/file-100.jpg"><h3>INSTAGRAM</h3></div><div class="platform-card" onclick="showPlatform('youtube')"><img src="https://i.ibb.co/6jQK0fK/file-99.jpg"><h3>YOUTUBE</h3></div></div>
+<div id="serviceForm" class="service-form"><h3 style="color:#00ffcc" id="serviceTitle">Select Service</h3><select id="serviceSelect"></select><input type="text" id="serviceLink" placeholder="Link"><input type="number" id="serviceQuantity" placeholder="Quantity"><p id="servicePrice" style="color:#00ffcc"></p><button onclick="placeOrder()">PLACE ORDER</button></div>
+<div id="orderResult"></div>
+<h3 style="color:#00ffcc;margin:20px 0 10px">RECENT ORDERS</h3>
+<div class="table-container"><table><thead><tr><th>ID</th><th>SERVICE</th><th>QTY</th><th>AMOUNT</th><th>STATUS</th><th>DATE</th></tr></thead><tbody>{% for o in orders %}<tr><td>{{ o.order_id }}</td><td>{{ o.service_name[:20] }}</td><td>{{ o.quantity }}</td><td>₹{{ o.total_amount }}</td><td>{{ o.status }}</td><td>{{ o.created_at.strftime('%Y-%m-%d') }}</td></tr>{% endfor %}</tbody></table></div></div>
+<div id="addCashModal" class="modal"><div class="modal-content"><h2 style="color:#00ffcc">ADD CASH</h2><input type="number" id="cashAmount" placeholder="Amount (10-500)"><button onclick="generateQR()" style="background:#00ffcc;color:#0a0a2a;padding:12px;width:100%;margin:10px 0;border:none;border-radius:8px;">GENERATE QR</button><button onclick="closeAddCash()" style="background:#333;color:white;padding:12px;width:100%;border:none;border-radius:8px;">CANCEL</button><div id="qrResult" style="margin-top:15px"></div></div></div>
+<script>
+let services = {{ services|tojson }};
+let currentPlatform = null;
+function showPlatform(p){currentPlatform=p;let s=document.getElementById('serviceSelect');s.innerHTML='';services[p].services.forEach(svc=>{let opt=document.createElement('option');opt.value=svc.id;opt.text=`${svc.name} - ₹${svc.price}/1K (Min:${svc.min} Max:${svc.max})`;s.appendChild(opt);});document.getElementById('serviceTitle').innerHTML=`${services[p].name} SERVICES`;document.getElementById('serviceForm').style.display='block';updatePrice();s.onchange=updatePrice;}
+function updatePrice(){let sel=document.getElementById('serviceSelect');let id=parseInt(sel.value);let svc=null;for(let s of services[currentPlatform].services){if(s.id===id){svc=s;break;}}if(svc){document.getElementById('servicePrice').innerHTML=`Price: ₹${svc.price}/1000 | Min:${svc.min} Max:${svc.max}`;}}
+function placeOrder(){let sid=document.getElementById('serviceSelect').value;let link=document.getElementById('serviceLink').value;let qty=document.getElementById('serviceQuantity').value;if(!link||!qty){alert('Fill all fields');return;}fetch('/place-order',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:`service_type=${currentPlatform}&service_id=${sid}&link=${link}&quantity=${qty}`}).then(res=>res.json()).then(data=>{if(data.success){document.getElementById('orderResult').innerHTML=`<span style="color:#0f0;">✅ Order Placed! ID: ${data.order_id}</span>`;setTimeout(()=>location.reload(),2000);}else{document.getElementById('orderResult').innerHTML=`<span style="color:#f33;">❌ ${data.error}</span>`;}});}
+function openAddCash(){document.getElementById('addCashModal').style.display='flex';}
+function closeAddCash(){document.getElementById('addCashModal').style.display='none';document.getElementById('qrResult').innerHTML='';document.getElementById('cashAmount').value='';}
+function generateQR(){let amt=document.getElementById('cashAmount').value;if(amt<10||amt>500){alert('Amount must be 10-500');return;}fetch('/add-cash',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'amount='+amt}).then(res=>res.json()).then(data=>{if(data.success){document.getElementById('qrResult').innerHTML=`<p style="color:#0ff;">Pay: ₹${data.qr_amount}</p><img src="data:image/png;base64,${data.qr_code}" style="width:160px;"><p style="color:#fa0;">Txn ID: ${data.transaction_id}</p><p>Send screenshot to bot</p>`;}else{alert('Error');}});}
+</script>
+</body>
+</html>
+"""
+
+ADMIN_HTML = """
+<!DOCTYPE html>
+<html>
+<head><title>VENOM X - Admin</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:'Orbitron',monospace;}
+body{background:linear-gradient(135deg,#0a0a2a,#0f0f3a,#1a1a4a);}
+.navbar{background:rgba(10,10,42,0.9);padding:15px 30px;display:flex;justify-content:space-between;border-bottom:1px solid #00ffcc;}
+.logo img{height:45px;}
+.container{padding:30px;max-width:1400px;margin:0 auto;}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;margin-bottom:30px;}
+.stat-card{background:rgba(255,255,255,0.05);border:1px solid #00ffcc;border-radius:16px;padding:20px;text-align:center;}
+.stat-card h3{color:rgba(255,255,255,0.6);}
+.stat-card .value{color:#00ffcc;font-size:28px;font-weight:bold;}
+h3{color:#00ffcc;margin:20px 0;}
+.table-container{background:rgba(255,255,255,0.05);border-radius:16px;overflow-x:auto;}
+table{width:100%;border-collapse:collapse;}
+th,td{padding:10px;text-align:left;color:white;border-bottom:1px solid rgba(255,255,255,0.1);}
+th{color:#00ffcc;}
+.btn-ban{background:#ff3366;color:white;border:none;padding:5px 10px;border-radius:5px;cursor:pointer;}
+.btn-unban{background:#00ffcc;color:#0a0a2a;border:none;padding:5px 10px;border-radius:5px;cursor:pointer;}
+.btn-add{background:#0099ff;color:white;border:none;padding:5px 10px;border-radius:5px;cursor:pointer;}
+</style>
+</head>
+<body>
+<div class="navbar"><div class="logo"><img src="https://i.ibb.co/VYf9Qq2p/file-97.jpg"></div><a href="/logout" style="color:#00ffcc;text-decoration:none;">LOGOUT</a></div>
+<div class="container">
+<h2 style="color:#00ffcc;margin-bottom:20px;">👑 ADMIN PANEL</h2>
+<div class="stats"><div class="stat-card"><h3>TOTAL USERS</h3><div class="value">{{ total_users }}</div></div><div class="stat-card"><h3>TOTAL ORDERS</h3><div class="value">{{ total_orders }}</div></div><div class="stat-card"><h3>TOTAL VOLUME</h3><div class="value">₹{{ total_volume }}</div></div></div>
+<h3>USERS</h3>
+<div class="table-container"><table><thead><tr><th>ID</th><th>USERNAME</th><th>BALANCE</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody>{% for u in users %}<tr><td>{{ u.id }}</td><td>{{ u.username }}</td><td>₹{{ u.balance }}</td><td>{% if u.is_banned %}BANNED{% else %}ACTIVE{% endif %}</td><td>{% if not u.is_admin %}{% if u.is_banned %}<button class="btn-unban" onclick="unbanUser({{ u.id }})">UNBAN</button>{% else %}<button class="btn-ban" onclick="banUser({{ u.id }})">BAN</button>{% endif %}<input type="number" id="amt_{{ u.id }}" placeholder="Amt" style="width:70px;"><button class="btn-add" onclick="addBalance({{ u.id }})">+</button>{% else %}OWNER{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+<h3>ORDERS</h3>
+<div class="table-container"><table><thead><tr><th>ORDER ID</th><th>USER</th><th>SERVICE</th><th>QTY</th><th>AMOUNT</th><th>STATUS</th><th>DATE</th></tr></thead><tbody>{% for o in orders %}<tr><td>{{ o.order_id }}</td><td>{{ o.user_id }}</td><td>{{ o.service_name[:15] }}</td><td>{{ o.quantity }}</td><td>₹{{ o.total_amount }}</td><td>{{ o.status }}</td><td>{{ o.created_at.strftime('%Y-%m-%d') }}</td></tr>{% endfor %}</tbody></table></div></div>
+<script>
+function banUser(id){fetch('/admin/ban-user',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'user_id='+id}).then(()=>location.reload());}
+function unbanUser(id){fetch('/admin/unban-user',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'user_id='+id}).then(()=>location.reload());}
+function addBalance(id){let amt=document.getElementById('amt_'+id).value;fetch('/admin/add-balance',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'user_id='+id+'&amount='+amt}).then(()=>location.reload());}
+</script>
+</body>
+</html>
+"""
+
+ORDER_HISTORY_HTML = """
+<!DOCTYPE html>
+<html>
+<head><title>Order History</title>
+<style>*{margin:0;padding:0;box-sizing:border-box;font-family:'Orbitron',monospace;}body{background:linear-gradient(135deg,#0a0a2a,#0f0f3a,#1a1a4a);}.navbar{background:rgba(10,10,42,0.9);padding:15px 30px;display:flex;justify-content:space-between;border-bottom:1px solid #00ffcc;}.logo img{height:45px;}.container{padding:30px;}.back{color:#00ffcc;text-decoration:none;}.table-container{background:rgba(255,255,255,0.05);border-radius:16px;overflow-x:auto;margin-top:20px;}table{width:100%;border-collapse:collapse;}th,td{padding:12px;color:white;border-bottom:1px solid rgba(255,255,255,0.1);}th{color:#00ffcc;}</style>
+</head>
+<body><div class="navbar"><div class="logo"><img src="https://i.ibb.co/VYf9Qq2p/file-97.jpg"></div><a href="/dashboard" class="back">← BACK</a></div>
+<div class="container"><h2 style="color:#00ffcc">ORDER HISTORY</h2>
+<div class="table-container"><table><thead><tr><th>ORDER ID</th><th>SERVICE</th><th>LINK</th><th>QTY</th><th>AMOUNT</th><th>STATUS</th><th>DATE</th></tr></thead><tbody>{% for o in orders %}<tr><td>{{ o.order_id }}</td><td>{{ o.service_name }}</td><td><small>{{ o.link[:30] }}</small></td><td>{{ o.quantity }}</td><td>₹{{ o.total_amount }}</td><td>{{ o.status }}</td><td>{{ o.created_at.strftime('%Y-%m-%d') }}</td></tr>{% endfor %}</tbody></table></div></div></body>
+</html>
+"""
+
+TRANSACTION_HISTORY_HTML = """
+<!DOCTYPE html>
+<html>
+<head><title>Transaction History</title>
+<style>*{margin:0;padding:0;box-sizing:border-box;font-family:'Orbitron',monospace;}body{background:linear-gradient(135deg,#0a0a2a,#0f0f3a,#1a1a4a);}.navbar{background:rgba(10,10,42,0.9);padding:15px 30px;display:flex;justify-content:space-between;border-bottom:1px solid #00ffcc;}.logo img{height:45px;}.container{padding:30px;}.back{color:#00ffcc;text-decoration:none;}.table-container{background:rgba(255,255,255,0.05);border-radius:16px;overflow-x:auto;margin-top:20px;}table{width:100%;border-collapse:collapse;}th,td{padding:12px;color:white;border-bottom:1px solid rgba(255,255,255,0.1);}th{color:#00ffcc;}</style>
+</head>
+<body><div class="navbar"><div class="logo"><img src="https://i.ibb.co/VYf9Qq2p/file-97.jpg"></div><a href="/dashboard" class="back">← BACK</a></div>
+<div class="container"><h2 style="color:#00ffcc">TRANSACTION HISTORY</h2>
+<div class="table-container"><table><thead><td><th>TXN ID</th><th>AMOUNT</th><th>QR AMOUNT</th><th>STATUS</th><th>DATE</th></tr></thead><tbody>{% for t in transactions %}<tr><td>{{ t.transaction_id }}</td><td>₹{{ t.amount }}</td><td>₹{{ t.qr_amount }}</td><td>{{ t.status }}</td><td>{{ t.created_at.strftime('%Y-%m-%d') }}</td></tr>{% endfor %}</tbody></table></div></div></body>
+</html>
+"""
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
